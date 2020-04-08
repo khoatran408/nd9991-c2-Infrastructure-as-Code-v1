@@ -1,11 +1,11 @@
 Description: >
-    Carlos Rivas / Udacity 2019
+    Project 2 / Udacity 2020
 
 Parameters:
-
     EnvironmentName:
         Description: An environment name that will be prefixed to resource names
         Type: String
+        
 Resources:
   LBSecGroup:
     Type: AWS::EC2::SecurityGroup
@@ -38,6 +38,10 @@ Resources:
         ToPort: 8080
         CidrIp: 0.0.0.0/0
       - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0  
+      - IpProtocol: tcp
         FromPort: 22
         ToPort: 22
         CidrIp: 0.0.0.0/0
@@ -47,38 +51,20 @@ Resources:
         ToPort: 65535
         CidrIp: 0.0.0.0/0
 
-  JumpBoxInstance: 
-    Type: AWS::EC2::Instance
-    Properties: 
-      ImageId: "ami-0ce21b51cb31a48b8"
-      KeyName: "that-one"      
-      SecurityGroupIds: 
-      - Ref: WebServerSecGroup
-      SubnetId: 
-        Fn::ImportValue:
-          !Sub "${EnvironmentName}-PUB1-SN"
-      InstanceType: t2.micro
-      BlockDeviceMappings:
-      - DeviceName: "/dev/sdk"
-        Ebs:
-          VolumeSize: '10'
-       
-    
   WebAppLaunchConfig:
     Type: AWS::AutoScaling::LaunchConfiguration
     Properties:
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
-          # Install docker
           apt-get update -y
-          apt-get install -y apache2
+          apt-get install unzip awscli -y
+          apt-get install apache2 -y
           systemctl start apache2.service
           cd /var/www/html
-          echo "Udacity Demo Web Server Up and Running!" > index.html
-          
-      ImageId: ami-005bdb005fb00e791
-      KeyName: that-one
+          aws s3 cp s3://udacity-demo-1/udacity.zip .
+          unzip -o udacity.zip        
+      ImageId: ami-0d1cd67c26f5fca19
       SecurityGroups:
       - Ref: WebServerSecGroup
       InstanceType: t2.micro
@@ -86,6 +72,7 @@ Resources:
       - DeviceName: "/dev/sdk"
         Ebs:
           VolumeSize: '10'
+
   WebAppGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
@@ -94,7 +81,7 @@ Resources:
           !Sub "${EnvironmentName}-PRIV-NETS"
       LaunchConfigurationName:
         Ref: WebAppLaunchConfig
-      MinSize: '3'
+      MinSize: '4'
       MaxSize: '5'
       TargetGroupARNs:
       - Ref: WebAppTargetGroup
@@ -136,9 +123,16 @@ Resources:
       HealthCheckProtocol: HTTP
       HealthCheckTimeoutSeconds: 8
       HealthyThresholdCount: 2
-      Port: 8080
+      Port: 80
       Protocol: HTTP
       UnhealthyThresholdCount: 5
       VpcId: 
         Fn::ImportValue:
           Fn::Sub: "${EnvironmentName}-VPCID"
+
+Outputs:    
+  WebAppLB: 
+      Description: public URL on load balancer for accessing the webpage
+      Value: !Join ['',['http://', !GetAtt WebAppLB.DNSName]]
+      Export:
+        Name: !Sub ${EnvironmentName}-DNS-Name
